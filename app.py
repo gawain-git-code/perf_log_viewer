@@ -45,7 +45,7 @@ def parse_log(log_content):
             except ValueError:
                 print(f"Failed to parse Standard SQN from line: {line}")
                 continue
-        if 'Max Drawdown' in line and ': ' in line:
+        if 'Max Drawdown Period' not in line and 'Max Drawdown' in line and ': ' in line:
             try:
                 models[current_model]['Max Drawdown'] = float(line.split(': ')[1].replace('%', ''))
             except ValueError:
@@ -57,7 +57,7 @@ def parse_log(log_content):
             except ValueError:
                 print(f"Failed to parse Annualized/Normalized Return from line: {line}")
                 continue
-        if 'SQN' in line and ': ' in line:
+        if 'SQN' in line and 'Standard SQN' not in line and ': ' in line:
             try:
                 models[current_model]['SQN'] = float(line.split(': ')[1])
             except ValueError:
@@ -72,9 +72,9 @@ def parse_log(log_content):
 
     return models, date_range
 
-# Function to select the best model
-def select_best_model(df):
-    # Normalize the metrics to calculate the composite score
+# Function to normalize and weight metrics for composite score calculation
+def calculate_composite_score(df, weights):
+    # Normalize the metrics to a 0-1 scale
     df_normalized = df.copy()
     df_normalized['Win Rate'] = df['Win Rate'] / 100  # Normalize percentage to a 0-1 scale
     df_normalized['Profit Factor'] = df['Profit Factor'] / df['Profit Factor'].max()
@@ -86,26 +86,45 @@ def select_best_model(df):
     if 'Sharp Ratio' in df.columns:
         df_normalized['Sharp Ratio'] = df['Sharp Ratio'] / df['Sharp Ratio'].max()
 
-    # Calculate a composite score (simple average in this example)
-    metrics = ['Win Rate', 'Profit Factor', 'Standard SQN', 'Max Drawdown', 'Annualized/Normalized Return']
+    # Calculate the composite score as the weighted sum of the normalized metrics
+    composite_score = (df_normalized * weights).sum(axis=1)
+    return composite_score
+
+# Function to select the best model
+def select_best_model(df):
+    # Define weights for each metric
+    weights = {
+        'Win Rate': 1,
+        'Profit Factor': 1,
+        'Max Drawdown': 1.5,
+        'Standard SQN': 1.0,
+        'Annualized/Normalized Return': 2.0
+    }
     if 'SQN' in df.columns:
-        metrics.append('SQN')
+        weights['SQN'] = 3.0
     if 'Sharp Ratio' in df.columns:
-        metrics.append('Sharp Ratio')
-    
-    df_normalized['Composite Score'] = df_normalized[metrics].mean(axis=1)
+        weights['Sharp Ratio'] = 2.0
+
+    # Normalize weights so they sum to 1
+    total_weight = sum(weights.values())
+    weights = {k: v / total_weight for k, v in weights.items()}
+
+    # Calculate composite score
+    composite_score = calculate_composite_score(df, weights)
 
     # Select the model with the highest composite score
-    best_model = df_normalized['Composite Score'].idxmax()
+    best_model = composite_score.idxmax()
     best_model_metrics = df.loc[best_model].copy()
-    best_model_metrics['Composite Score'] = df_normalized.loc[best_model, 'Composite Score']
+    best_model_metrics['Composite Score'] = composite_score[best_model]
 
-    return best_model, best_model_metrics
+    return best_model, best_model_metrics, composite_score
 
 # Route to handle file upload and display the results
 @app.route('/', methods=['GET', 'POST'])
 def index():
     best_overall_model_info = None
+    all_composite_scores = []
+    model_scores = {}
     if request.method == 'POST':
         log_files = request.files.getlist('logfiles')
         results = []
@@ -116,7 +135,17 @@ def index():
             df = pd.DataFrame.from_dict(model_metrics, orient='index')
 
             # Select the best model
-            best_model, best_model_metrics = select_best_model(df)
+            best_model, best_model_metrics, composite_scores = select_best_model(df)
+
+            # Collect all composite scores
+            composite_scores = composite_scores.to_dict()
+            for model, score in composite_scores.items():
+                if model in model_scores:
+                    model_scores[model].append(score)
+                else:
+                    model_scores[model] = [score]
+
+            all_composite_scores.append({'filename': log_file.filename, 'scores': composite_scores, 'best_model': best_model})
 
             # Highlight the best model in the graphs
             colors = ['blue' if model != best_model else 'red' for model in df.index]
@@ -155,17 +184,40 @@ def index():
                 'best_model_metrics': best_model_metrics.to_dict()
             })
 
-            # Store best overall model info
-            if not best_overall_model_info or best_model_metrics['Composite Score'] > best_overall_model_info['best_model_metrics']['Composite Score']:
+        # Calculate the average composite score for each model
+        average_scores = {model: sum(scores)/len(scores) for model, scores in model_scores.items()}
+
+        # Determine the best overall model based on the average composite scores
+        best_overall_model = max(average_scores, key=average_scores.get)
+        best_overall_model_score = average_scores[best_overall_model]
+
+        # Find the best overall model metrics from the logs
+        for result in results:
+            if best_overall_model in result['best_model']:
                 best_overall_model_info = {
-                    'filename': log_file.filename,
-                    'best_model': best_model,
-                    'best_model_metrics': best_model_metrics.to_dict()
+                    'filename': result['filename'],
+                    'best_model': best_overall_model,
+                    'best_model_metrics': result['best_model_metrics'],
+                    'best_model_composite_score': best_overall_model_score
                 }
+                break
 
-        return render_template('index.html', results=results, best_model_info=best_overall_model_info)
+        # sort the all_composite_scores by the scores of each model within each log file and save to all_composite_scores_sorted
+        all_composite_scores_sorted = []
+        for composite_scores in all_composite_scores:
+            scores = composite_scores['scores']
+            sorted_scores = {k: v for k, v in sorted(scores.items(), key=lambda item: item[1], reverse=True)}
+            all_composite_scores_sorted.append({'filename': composite_scores['filename'], 'scores': sorted_scores, 'best_model': composite_scores['best_model']})
 
-    return render_template('index.html', results=[], best_model_info=best_overall_model_info)
+        # check if all_composite_scores_sorted is equal to all_composite_scores
+        for i, composite_scores in enumerate(all_composite_scores_sorted):
+            if composite_scores != all_composite_scores[i]:
+                print("all_composite_scores_sorted is not equal to all_composite_scores")
+                break
+
+        return render_template('index.html', results=results, best_model_info=best_overall_model_info, all_composite_scores=all_composite_scores_sorted, best_overall_model=best_overall_model)
+
+    return render_template('index.html', results=[], best_model_info=best_overall_model_info, all_composite_scores=[], best_overall_model=None)
 
 if __name__ == '__main__':
     app.run(debug=True)

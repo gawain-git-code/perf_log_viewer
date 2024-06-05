@@ -13,6 +13,9 @@
         .plot-container {
             width: 100%;
         }
+        .highlight {
+            background-color: #ffdd57; /* Highlight color for best model */
+        }
     </style>
 </head>
 <body>
@@ -26,17 +29,18 @@
             <button type="submit" class="btn btn-primary">Upload</button>
         </form>
         {% if best_model_info %}
-            <div class="card mb-4" style="font-size: 16px;"></div>
+            <div class="card mb-4">
                 <div class="card-header">
                     Best Model from all uploaded logs
                 </div>
                 <div class="card-body">
-                    <h5 class="card-title">{{ best_model_info.filename }}</h5>
-                    <p class="card-text" style="font-size: 14px;"><strong>Model:</strong> {{ best_model_info.best_model }}</p>
+                    <h5 class="card-title">{{ best_model_info.best_model }}</h5>
+                    <p class="card-text"><strong>Filename:</strong> {{ best_model_info.filename }}</p>
                     <ul class="list-group list-group-flush">
                         {% for key, value in best_model_info.best_model_metrics.items() %}
-                            <li class="list-group-item" style="font-size: 12px;"><strong>{{ key }}:</strong> {{ value }}</li>
+                            <li class="list-group-item"><strong>{{ key }}:</strong> {{ value }}</li>
                         {% endfor %}
+                        <li class="list-group-item"><strong>Composite Score:</strong> {{ best_model_info.best_model_composite_score }}</li>
                     </ul>
                 </div>
             </div>
@@ -55,6 +59,27 @@
                         <div class="plot-container mt-4">{{ result.graph|safe }}</div>
                     </div>
                 {% endfor %}
+            </div>
+        {% endif %}
+        {% if all_composite_scores %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    Composite Scores for All Models
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        {% for log in all_composite_scores %}
+                            <li class="list-group-item">
+                                <strong>{{ log.filename }}:</strong>
+                                <ul>
+                                    {% for model, score in log.scores.items() %}
+                                        <li class="{% if model == log.best_model %}highlight{% endif %}">{{ model }}: {{ score }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
             </div>
         {% endif %}
     </div>
