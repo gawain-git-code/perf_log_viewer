@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Performance Comparison</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .tab-pane {
+            width: 100%;
+        }
+        .plot-container {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Model Performance Comparison</h1>
+        <form action="/" method="post" enctype="multipart/form-data" class="mb-4">
+            <div class="form-group">
+                <label for="logfiles">Upload Log Files:</label>
+                <input type="file" class="form-control-file" id="logfiles" name="logfiles" accept=".log" multiple>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </form>
+        {% if best_model_info %}
+            <div class="card mb-4" style="font-size: 16px;"></div>
+                <div class="card-header">
+                    Best Model from all uploaded logs
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ best_model_info.filename }}</h5>
+                    <p class="card-text" style="font-size: 14px;"><strong>Model:</strong> {{ best_model_info.best_model }}</p>
+                    <ul class="list-group list-group-flush">
+                        {% for key, value in best_model_info.best_model_metrics.items() %}
+                            <li class="list-group-item" style="font-size: 12px;"><strong>{{ key }}:</strong> {{ value }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        {% endif %}
+        {% if results %}
+            <ul class="nav nav-tabs" id="myTab" role="tablist">
+                {% for result in results %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if loop.first %}active{% endif %}" id="tab-{{ loop.index }}" data-toggle="tab" href="#content-{{ loop.index }}" role="tab" aria-controls="content-{{ loop.index }}" aria-selected="{% if loop.first %}true{% else %}false{% endif %}">{{ result.filename }}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+            <div class="tab-content" id="myTabContent">
+                {% for result in results %}
+                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="content-{{ loop.index }}" role="tabpanel" aria-labelledby="tab-{{ loop.index }}">
+                        <div class="plot-container mt-4">{{ result.graph|safe }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function(){
+            $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+                window.dispatchEvent(new Event('resize'));
+            });
+        });
+    </script>
+</body>
+</html>
